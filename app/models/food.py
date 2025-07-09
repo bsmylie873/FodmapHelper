@@ -1,42 +1,33 @@
-from enum import Enum
-from sqlalchemy import Column, Integer, String, Enum as SQLAlchemyEnum, DateTime
-from sqlalchemy.sql import func
-from app.db.base import Base
+from sqlalchemy import Column, Integer, String, Enum, ForeignKey, Text
+from sqlalchemy.orm import relationship
+from app.db.database import Base
+from enum import Enum as PyEnum
 
-class FoodCategory(str, Enum):
-    VEGETABLES = "vegetables"
-    FRUITS = "fruits"
-    GRAINS = "grains"
-    PROTEINS = "proteins"
-    DAIRY = "dairy"
-    BEVERAGES = "beverages"
-    CONDIMENTS = "condiments"
-
-class FodmapLevel(str, Enum):
+class FodmapLevel(str, PyEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
-    UNKNOWN = "unknown"
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    description = Column(Text, nullable=True)
+    
+    # Relationship with foods
+    foods = relationship("Food", back_populates="category")
 
 class Food(Base):
     __tablename__ = "foods"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), unique=True, index=True)
-    category = Column(SQLAlchemyEnum(FoodCategory), nullable=False)
-    description = Column(String, nullable=True)
+    name = Column(String, index=True)
+    fodmap_level = Column(Enum(FodmapLevel))
+    serving_size = Column(String)
+    description = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
     
-    # FODMAP content levels with UNKNOWN as default
-    fructose = Column(SQLAlchemyEnum(FodmapLevel), default=FodmapLevel.UNKNOWN, nullable=False)
-    lactose = Column(SQLAlchemyEnum(FodmapLevel), default=FodmapLevel.UNKNOWN, nullable=False)
-    polyols = Column(SQLAlchemyEnum(FodmapLevel), default=FodmapLevel.UNKNOWN, nullable=False)
-    mannitol = Column(SQLAlchemyEnum(FodmapLevel), default=FodmapLevel.UNKNOWN, nullable=False)
-    sorbitol = Column(SQLAlchemyEnum(FodmapLevel), default=FodmapLevel.UNKNOWN, nullable=False)
-    
-    # Serving information
-    serving_size = Column(String(50), nullable=True)
-    serving_unit = Column(String(20), nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now()) 
+    # Foreign key to category
+    category_id = Column(Integer, ForeignKey("categories.id"))
+    category = relationship("Category", back_populates="foods") 

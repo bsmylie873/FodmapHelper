@@ -5,86 +5,67 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.main import app
-from app.db.database import Base, get_db
-from app.models.food import Food, FoodCategory, FodmapLevel
+from app.database import Base
+from app.dependencies import get_db
 
-# Create in-memory SQLite database for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+# Use in-memory SQLite for testing
+SQLALCHEMY_DATABASE_URL = "sqlite://"
 
-@pytest.fixture(scope="function")
-def test_db():
-    """Create a fresh database for each test."""
+@pytest.fixture(scope="session")
+def engine():
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    
-    # Create tables
-    Base.metadata.create_all(bind=engine)
-    
-    # Create a new session for the test
+    return engine
+
+@pytest.fixture(scope="session")
+def TestingSessionLocal(engine):
+    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@pytest.fixture
+def db(TestingSessionLocal):
     db = TestingSessionLocal()
     try:
         yield db
     finally:
         db.close()
-        # Drop all tables after the test
-        Base.metadata.drop_all(bind=engine)
 
-@pytest.fixture(scope="function")
-def client(test_db):
-    """Create a test client with a fresh database."""
-    def override_get_db():
+@pytest.fixture
+def override_get_db(db):
+    def _override_get_db():
         try:
-            yield test_db
+            yield db
         finally:
-            test_db.close()
-    
-    # Override the database dependency
+            pass
+    return _override_get_db
+
+@pytest.fixture
+def client(engine, override_get_db):
     app.dependency_overrides[get_db] = override_get_db
-    
-    # Disable database initialization on startup for tests
-    app.router.on_startup = []
-    
-    with TestClient(app) as test_client:
-        yield test_client
-    
+    Base.metadata.create_all(bind=engine)
+    yield TestClient(app)
+    Base.metadata.drop_all(bind=engine)
     app.dependency_overrides.clear()
 
-@pytest.fixture(scope="function")
-def sample_foods(test_db):
-    """Create sample food items for testing."""
-    foods = [
-        Food(
-            name="Test Garlic",
-            category=FoodCategory.VEGETABLES,
-            description="Test garlic description",
-            fructose=FodmapLevel.HIGH,
-            lactose=FodmapLevel.LOW,
-            polyols=FodmapLevel.LOW,
-            mannitol=FodmapLevel.LOW,
-            sorbitol=FodmapLevel.LOW,
-            serving_size="1",
-            serving_unit="clove"
-        ),
-        Food(
-            name="Test Banana",
-            category=FoodCategory.FRUITS,
-            description="Test banana description",
-            fructose=FodmapLevel.LOW,
-            lactose=FodmapLevel.LOW,
-            polyols=FodmapLevel.LOW,
-            mannitol=FodmapLevel.LOW,
-            sorbitol=FodmapLevel.LOW,
-            serving_size="1",
-            serving_unit="medium"
-        ),
-    ]
-    
-    for food in foods:
-        test_db.add(food)
-    test_db.commit()
-    
-    return foods 
+@pytest.fixture
+def test_category(client):
+    response = client.post(
+        "/categories/",
+        json={"name": "Test Category", "description": "Test Description"}
+    )
+    return response.json()
+
+@pytest.fixture
+def test_food(client, test_category):
+    response = client.post(
+        "/foods/",
+        json={
+            "name": "Test Food",
+            "fodmap_level": "low",
+            "serving_size": "100g",
+            "category_id": test_category["id"]
+        }
+    )
+    return response.json() 
